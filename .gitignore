@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+*.blend1
+/checks/
+/*.zip
+!/Material Core 1.0.2.zip
