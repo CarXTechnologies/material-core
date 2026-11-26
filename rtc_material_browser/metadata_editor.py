@@ -52,11 +52,12 @@ class TextField:
 
 
 class NameEditor:
-    def __init__(self, title, action, *, name="", collection=None, refs=()):
+    def __init__(self, title, action, *, name="", collection=None, refs=(), rename_palette=False):
         self.title = title
         self.action = action
         self.collection = collection
         self.refs = refs
+        self.rename_palette = rename_palette
         self.fields = {"name": TextField(name)}
         self.focus = "name"
         self.field_views = {}

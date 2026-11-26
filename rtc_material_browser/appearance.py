@@ -112,6 +112,8 @@ RU = {
     "Local 4L preset": "Локальный пресет 4L",
     "Shared 4L preset": "Общий пресет 4L",
     "Shared Catalog": "Общий каталог",
+    "Name 4L": "Имя 4L",
+    "Name 4L material": "Имя материала 4L",
     "Enter a name": "Введите название",
     "No tags yet": "Тегов пока нет",
     "Tags saved": "Теги сохранены",

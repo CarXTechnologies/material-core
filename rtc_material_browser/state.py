@@ -148,6 +148,7 @@ class State:
                     alternate = next((self.metadata[key] for key in entry.get("aliases", ()) if key in self.metadata), None)
                     if alternate is not None:
                         self.metadata[entry["id"]] = alternate
+                entry["kind"] = catalog.material_kind(entry, self.metadata.get(entry["id"], {}))
             new_layers = indexing_settings(self.metadata)
             if self.auto_index and self.stamps is not None and old_layers != new_layers:
                 self.index()

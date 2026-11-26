@@ -7,9 +7,11 @@ import os
 from PIL import Image, ImageDraw, ImageOps
 
 if __package__:
+    from .catalog import uses_opacity_map
     from .layers import layer_keys
     from .studio_preview import SIZE, TEXTURE_EDGE, decal, sphere
 else:
+    from catalog import uses_opacity_map
     from layers import layer_keys
     from studio_preview import SIZE, TEXTURE_EDGE, decal, sphere
 
@@ -55,8 +57,11 @@ def inputs(entry, meta):
     channels = (("Diffuse", "Normal", "Roughness") if mode == "4L-mat" else
                 ("Diffuse", "Normal", "Roughness", "Metalic", "Alpha") if mode == "Decal" else
                 ("Diffuse", "Normal", "Roughness", "Metalic"))
-    return [{channel: groups[key]["maps"][channel] for channel in channels if groups[key]["maps"].get(channel)}
-            for key in keys[:4]]
+    return [
+        {channel: groups[key]["maps"][channel] for channel in channels
+         if groups[key]["maps"].get(channel) and (channel != "Alpha" or uses_opacity_map(groups[key]))}
+        for key in keys[:4]
+    ]
 
 
 def local_source(root, relative):

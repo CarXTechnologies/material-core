@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "rtc_material_browser"
-version = "1.0.2"
+version = "1.0.3"
 name = "Material Core"
 tagline = "Browse SVN textures and apply RenderCore materials"
 maintainer = "RTC Tools"
@@ -8,7 +8,10 @@ type = "add-on"
 blender_version_min = "5.0.0"
 license = ["SPDX:GPL-3.0-or-later"]
 platforms = ["windows-x64"]
-wheels = ["./wheels/pillow-12.3.0-cp311-cp311-win_amd64.whl"]
+wheels = [
+  "./wheels/pillow-12.3.0-cp311-cp311-win_amd64.whl",
+  "./wheels/pillow-12.3.0-cp313-cp313-win_amd64.whl",
+]
 
 [permissions]
 files = "Read SVN textures and store the catalog and previews"

@@ -159,6 +159,7 @@ class Browser:
         self.builder_open = False
         self.builder_height = BUILDER_HEIGHT
         self.layer_refs = []
+        self.layer_name = ""
         self.layer_press = None
         self.layer_drag = None
         self.scroll = self.limit = self.detail_scroll = self.detail_limit = self.menu_scroll = 0
@@ -704,11 +705,16 @@ class Browser:
         draft = self.name_editor
         name = draft.fields["name"].text.strip()
         try:
-            if draft.collection is None:
+            if draft.rename_palette:
+                if not name:
+                    raise ValueError(tr("Enter a name for the 4L material."))
+                self.layer_name = name
+            elif draft.collection is None:
                 self.config.create_collection(name)
                 self.config.status = tr("Created collection: {name}", name=name)
             else:
                 self.config.save_preset(name, draft.refs, draft.collection)
+                self.layer_name = name
                 title = dict(self.collection_labels(include_ignore=False))[draft.collection]
                 self.collection_picker = None
                 self.scroll = 0
@@ -834,6 +840,8 @@ class Browser:
         return 32 + self.builder_height if self.builder_open else 32
 
     def draft_name(self):
+        if self.layer_name:
+            return self.layer_name
         names = [self.config.entries[source]["groups"][group]["name"]
                  for source, group in self.layer_refs if source in self.config.entries
                  and group in self.config.entries[source]["groups"]]
@@ -841,6 +849,11 @@ class Browser:
 
     def draft_record(self):
         return layers.compose(self.config.entries, self.layer_refs, layers.DRAFT_ID, self.draft_name())
+
+    def remove_layer(self, index):
+        self.layer_refs.pop(index)
+        if not self.layer_refs:
+            self.layer_name = ""
 
     def builder_entry(self, index):
         source, group = self.layer_refs[index]
@@ -860,6 +873,7 @@ class Browser:
             if slot is not None and self.layer_refs:
                 raise ValueError(tr("Use Load layers into 4L palette to replace the current mix."))
             self.layer_refs = refs
+            self.layer_name = self.config.metadata.get(key, {}).get("name") or entry["name"]
             for source, group in refs:
                 component = self.config.entries.get(source)
                 if component and component["kind"] == "4L-mat" and group in component["groups"]:
@@ -934,6 +948,10 @@ class Browser:
         p.surface(x, y, width - 24, self.builder_height - 9, 10, PANEL, mix_color(LINE, appearance.theme.accent, 0.25))
         p.text(x + 12, y + 105 + extra, tr("4L palette"), size=15, width=110)
         p.text(x + 113, y + 106 + extra, f"{len(self.layer_refs)}/4", appearance.theme.label, size=11)
+        name_x = x + 142
+        if self.layer_refs and width - name_x - 54 >= 53:
+            self.button(name_x, y + 94 + extra, width - name_x - 54, self.layer_name or tr("Name 4L"),
+                        ("builder_name", None), height=26)
         self.button(width - 48, y + 94 + extra, 27, "", ("builder_close", None), height=26, icon="close")
         action_width = 143 if wide else max(60, (width - 50) // 2)
         start = x + 9
@@ -1221,6 +1239,8 @@ class Browser:
         textures = {}
         failed = ""
         for channel in CHANNELS:
+            if channel == "Alpha" and not catalog.uses_opacity_map(group):
+                continue
             if paths := group["maps"].get(channel):
                 preview = self.config.map_previews.get(paths[0], {})
                 if texture := self.painter.image_texture(preview.get("path")):
@@ -1394,7 +1414,12 @@ class Browser:
         elif name == "palette_toggle":
             self.builder_open = not self.builder_open
         elif name == "layer_remove":
-            self.layer_refs.pop(value)
+            self.remove_layer(value)
+        elif name == "builder_name":
+            self.draft_record()
+            self.name_editor = NameEditor(tr("Name 4L material"), tr("Save"), name=self.draft_name(),
+                                          rename_palette=True)
+            self.name_editor.fields["name"].anchor = 0
         elif name == "builder_apply":
             self.draft_record()
             self.apply_selected(context, layers.DRAFT_ID)
@@ -1523,7 +1548,7 @@ class Browser:
                 if slot is not None:
                     self.layer_refs.insert(slot, self.layer_refs.pop(self.layer_drag))
                 elif self.content_bottom <= y < region.height - 154:
-                    self.layer_refs.pop(self.layer_drag)
+                    self.remove_layer(self.layer_drag)
                     self.config.status = tr("Layer removed")
             self.clear_drag()
             area.tag_redraw()

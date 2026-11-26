@@ -5,18 +5,9 @@ from pathlib import Path
 
 import bpy
 
-from .catalog import source_path
+from .catalog import material_kind, source_path, uses_opacity_map
 from .layers import LAYER_CHANNELS, LIMIT, layer_keys
 
-STANDARD = {
-    frozenset(("Diffuse",)): "Diffuse",
-    frozenset(("Diffuse", "Roughness")): "Diffuse + Roughness",
-    frozenset(("Diffuse", "Roughness", "Normal")): "Diffuse + Roughness + Normal",
-    frozenset(("Diffuse", "Alpha")): "Diffuse + Alpha-blend",
-    frozenset(("Diffuse", "Roughness", "Alpha")): "Diffuse + Roughness + Alpha-blend",
-    frozenset(("Diffuse", "Roughness", "Normal", "Alpha")): "Diffuse + Roughness + Normal + Alpha-blend",
-    frozenset(("Diffuse", "Roughness", "Normal", "Metalic")): "Diffuse + Roughness + Normal + Metalness",
-}
 LOCAL_MAPS = {"Diffuse", "Normal", "Roughness", "Alpha", "aoMap"}
 BUNDLED_SHADER = Path(__file__).with_name("assets") / "RenderCore_Shader.blend"
 
@@ -33,7 +24,7 @@ def default_shader():
 
 
 def plan(record, metadata):
-    kind = record["kind"]
+    kind = material_kind(record, metadata)
     groups = record["groups"]
     layers = layer_keys(record, metadata) if kind == "4L-mat" else list(groups)
     if not layers:
@@ -48,16 +39,13 @@ def plan(record, metadata):
                 continue
             if kind == "4L-mat" and channel not in LAYER_CHANNELS:
                 continue
+            if channel == "Alpha" and (kind == "Standart" or
+                                       (kind == "Decal" and not uses_opacity_map(groups[key]))):
+                continue
             destination = f"{channel} ({number:02})" if channel in LOCAL_MAPS else channel
             images[destination] = (candidates[0], "sRGB" if channel in {"Diffuse", "Emission"} else "Non-Color")
     if kind == "Standart":
-        channels = frozenset(groups[layers[0]]["maps"]) - {"Preview", "aoMap"}
-        mode = STANDARD.get(channels)
-        if mode is None:
-            compatible = channels & {"Diffuse", "Roughness", "Normal", "Alpha"}
-            if "Normal" in compatible:
-                compatible |= {"Roughness"}
-            mode = STANDARD.get(compatible, "Diffuse")
+        mode = "Diffuse + Roughness + Normal"
     elif kind == "Decal":
         if "Alpha (01)" not in images:
             images["Alpha (01)"] = images["Diffuse (01)"]
@@ -101,14 +89,17 @@ def build(root, shader_path, record, metadata):
     if not shader_file.is_file():
         raise ValueError("Set the CarXBridge RenderCore_Shader.blend path in preferences.")
     files = {socket: (source_path(root, path), space) for socket, (path, space) in inputs.items()}
-    for path, _ in files.values():
-        if not path.is_file():
-            raise ValueError(f"Texture missing: {path.name}. Refresh the catalog after SVN update.")
     name = metadata.get("name") or record["name"]
     identity = hashlib.sha256(json.dumps(
         [str(shader_file), name, mode, {sock: [str(path), space] for sock, (path, space) in files.items()}],
         sort_keys=True,
     ).encode()).hexdigest()
+    for material in bpy.data.materials:
+        if not material.library and material.get("rtc_catalog_recipe") == identity:
+            return material
+    for path, _ in files.values():
+        if not path.is_file():
+            raise ValueError(f"Texture missing: {path.name}. Refresh the catalog after SVN update.")
     material = bpy.data.materials.new(name)
     created = []
     try:
@@ -122,11 +113,12 @@ def build(root, shader_path, record, metadata):
         shader.location = (0, 200)
         shader.inputs["ShaderType"].default_value = mode
         shader.inputs["CollisionType"].default_value = "Disable"
-        if mode == "4 Layers":
-            for slot in range(1, LIMIT + 1):
-                socket = f"Normal ({slot:02})"
-                if socket not in files:
-                    shader.inputs[socket].default_value = (0.5, 0.5, 1.0)
+        slots = LIMIT if mode == "4 Layers" else 1
+        for slot in range(1, slots + 1):
+            socket = f"Normal ({slot:02})"
+            normal = shader.inputs.get(socket)
+            if normal is not None and normal.enabled and socket not in files:
+                normal.default_value = (0.5, 0.5, 1.0)
         output = tree.nodes.new("ShaderNodeOutputMaterial")
         output.location = (330, 200)
         tree.links.new(shader.outputs["Return"], output.inputs["Surface"])

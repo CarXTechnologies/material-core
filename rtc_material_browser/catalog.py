@@ -32,7 +32,7 @@ FOUR_LAYER = re.compile(r"(?:^|[_ /-])(?:4l|4[_ -]?layers?|layered|four[_ -]?lay
 DECAL = re.compile(r"(?:^|[_ /-])(?:decals?|graffiti|stickers?|dt|du)(?:$|[_ /-])", re.I)
 COVER_INDEX = "index-material-core-library.json"
 LEGACY_INDEXES = ("index-material-core-alpha.json", "index-material-core.json", "index-covers-v2.json", "index-covers.json", "index.json")
-CATALOG_SCHEMA = 4
+CATALOG_SCHEMA = 5
 
 
 def read_json(path, default):
@@ -206,18 +206,29 @@ def annotate_alpha(entries, previous, root):
     old = {info["signature"][0]: info for entry in previous.values() for group in entry["groups"].values()
            if (info := group.get("diffuse_alpha"))}
     groups = {id(group): group for entry in entries for group in entry["groups"].values()}
-    sources = {group["maps"]["Diffuse"][0] for group in groups.values() if not group["maps"].get("Alpha")}
+    sources = {group["maps"]["Diffuse"][0] for group in groups.values() if not uses_opacity_map(group)}
     sources = sorted(path for path in sources if Path(path).suffix.lower() not in {".jpg", ".jpeg"})
     with ThreadPoolExecutor(max_workers=2) as workers:
         results = dict(zip(sources, workers.map(lambda path: alpha_info(root, path, old), sources)))
     for group in groups.values():
-        if not group["maps"].get("Alpha") and (info := results.get(group["maps"]["Diffuse"][0])):
+        if not uses_opacity_map(group) and (info := results.get(group["maps"]["Diffuse"][0])):
             group["diffuse_alpha"] = info
 
 
+def uses_opacity_map(group):
+    return bool(group["maps"].get("Alpha") and group.get("opacity_alpha", {}).get("transparent", True))
+
+
 def has_alpha(group):
-    return bool(group.get("opacity_alpha", {}).get("transparent", bool(group["maps"].get("Alpha")))
-                or group.get("diffuse_alpha", {}).get("transparent"))
+    return uses_opacity_map(group) or bool(group.get("diffuse_alpha", {}).get("transparent"))
+
+
+def material_kind(entry, metadata):
+    if entry["kind"] == "4L-mat":
+        return "4L-mat"
+    if metadata.get("shader_type") == "Decal" or any(has_alpha(group) for group in entry["groups"].values()):
+        return "Decal"
+    return "Standart"
 
 
 def annotate_opacity_maps(entries, previous, root):
@@ -312,17 +323,12 @@ def scan(root, cache, shared, progress=None, exchange=None):
             entries.append(record)
 
     entries.sort(key=lambda entry: (entry["category"].casefold(), entry["name"].casefold(), entry["id"]))
-    annotate_alpha(entries, previous, root)
     annotate_opacity_maps(entries, previous, root)
+    annotate_alpha(entries, previous, root)
     for entry in entries:
-        if entry["kind"] != "Decal":
-            continue
         override = next((metadata[key] for key in (entry["id"], *entry.get("aliases", ()))
                          if isinstance(metadata.get(key), dict)), {})
-        if override.get("shader_type") != "Decal" and not any(
-                group.get("opacity_alpha", group.get("diffuse_alpha", {})).get("transparent")
-                for group in entry["groups"].values()):
-            entry["kind"] = "Standart"
+        entry["kind"] = material_kind(entry, override)
     result = previews.populate(entries, previous, metadata, root, shared, progress)
     write_json(index, {"schema": 1, "catalog_schema": CATALOG_SCHEMA, "root": root_key, "cover_schema": previews.SCHEMA,
                        "cover_root": os.path.normcase(str(shared)), "entries": entries})

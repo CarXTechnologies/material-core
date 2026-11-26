@@ -110,7 +110,7 @@ class RTC_OT_apply_catalog_material(bpy.types.Operator):
         obj = context.view_layer.objects.get(self.target)
         material = None
         try:
-            if obj is None or obj.type != "MESH" or obj.mode != "OBJECT" or not obj.is_editable:
+            if not materials.can_assign_to(obj):
                 raise ValueError(tr("Choose an editable mesh in Object Mode."))
             previous = obj.active_material
             record = browser.draft_record() if self.key == layers.DRAFT_ID else data.entries[self.key]
@@ -119,12 +119,11 @@ class RTC_OT_apply_catalog_material(bpy.types.Operator):
             materials.assign(obj, material)
         except (KeyError, OSError, RuntimeError, ValueError) as error:
             if material is not None and material.users == 0:
-                bpy.data.materials.remove(material)
+                materials.remove_unused_catalog_material(material)
             data.status = str(error)
             self.report({"WARNING"}, str(error))
             return {"CANCELLED"}
         materials.remove_unused_catalog_material(previous)
-        material.name = metadata.get("name") or record["name"]
         return {"FINISHED"}
 
 
